@@ -13,3 +13,21 @@ Relay Input - (Control Side) → GND (Raspberry Pi)
 Relay Output (Load Side) → Kiln Power Circuit (Should be properly rated for your kiln's power requirements!)
 3. Raspberry Pi Power
 Ensure your Raspberry Pi is powered via the micro-USB or USB-C power adapter, depending on your model.
+
+
+
+To clone the repository
+sudo apt update
+sudo apt install git -y
+git clone https://github.com/Vlogsdaddy/kiln_controller.git
+cd kiln_controller
+python3 kiln_controller.py
+pip3 install -r requirements.txt
+
+
+To make a requirements.txt file
+pip3 freeze > requirements.txt
+Flask
+requests
+simple_pid
+adafruit-circuitpython-max31855
