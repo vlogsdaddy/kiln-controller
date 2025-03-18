@@ -41,12 +41,15 @@
             targetTempCell.innerHTML = `<input type="number" class="target_temp" min="0" step="1" oninput="calculateRampRates()">`;
             rampRateCell.innerHTML = `<span class="ramp_rate">0</span> °F/hr`;
             deleteCell.innerHTML = `<button onclick="deleteRow(this)">❌</button>`;
+
+            updateGraph();
         }
 
         function deleteRow(btn) {
             let row = btn.parentNode.parentNode;
             row.parentNode.removeChild(row);
             calculateRampRates();
+            updateGraph();
         }
 
         function calculateRampRates() {
@@ -66,6 +69,28 @@
 
                 currentRow.querySelector(".ramp_rate").innerText = rampRate;
             }
+            updateGraph();
+        }
+
+        function updateGraph() {
+            let schedule = [];
+            let rows = document.querySelectorAll("#scheduleTable tr");
+
+            rows.forEach((row, index) => {
+                if (index === 0) return;
+                let startTime = parseFloat(row.querySelector(".start_time")?.value) || 0;
+                let targetTemp = parseFloat(row.querySelector(".target_temp")?.value) || 0;
+                schedule.push({ time: startTime, temp: targetTemp });
+            });
+
+            schedule.sort((a, b) => a.time - b.time);
+
+            let times = schedule.map(step => step.time);
+            let temps = schedule.map(step => step.temp);
+
+            tempChart.data.labels = times;
+            tempChart.data.datasets[0].data = temps;
+            tempChart.update();
         }
 
         function saveSchedule() {
@@ -156,6 +181,29 @@
                 .then(response => response.json())
                 .then(data => alert(data.message))
                 .catch(error => console.error("Error stopping kiln:", error));
+        }
+
+        function setupChart() {
+            let ctx = document.getElementById("tempChart").getContext("2d");
+            tempChart = new Chart(ctx, {
+                type: "line",
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: "Temperature Profile (°F)",
+                        data: [],
+                        borderColor: "red",
+                        borderWidth: 2,
+                        fill: false
+                    }]
+                },
+                options: {
+                    scales: {
+                        x: { title: { display: true, text: "Time (minutes)" } },
+                        y: { title: { display: true, text: "Temperature (°F)" }, beginAtZero: false }
+                    }
+                }
+            });
         }
 
         setInterval(fetchTemperature, 5000);
