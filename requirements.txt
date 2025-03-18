@@ -1,0 +1,4 @@
+Flask
+requests
+simple_pid
+adafruit-circuitpython-max31855
