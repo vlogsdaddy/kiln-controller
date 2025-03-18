@@ -30,12 +30,7 @@ simple_pid
 adafruit-circuitpython-max31855
 
 To install a requirements.txt file
-sudo apt install python3-venv -y
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-python kiln_controller.py
-deactivate
+pip install -r requirements.txt --break-system-packages
 
 To run the code
 python3 kiln-controller.py
