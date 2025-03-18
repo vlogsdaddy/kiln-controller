@@ -19,11 +19,8 @@ Ensure your Raspberry Pi is powered via the micro-USB or USB-C power adapter, de
 To clone the repository
 sudo apt update
 sudo apt install git -y
-git clone https://github.com/Vlogsdaddy/kiln_controller.git
+git clone https://github.com/Vlogsdaddy/kiln_controller
 cd kiln_controller
-python3 kiln-controller.py
-pip3 install -r requirements.txt
-
 
 To make a requirements.txt file
 pip3 freeze > requirements.txt
@@ -31,3 +28,17 @@ Flask
 requests
 simple_pid
 adafruit-circuitpython-max31855
+
+To install a requirements.txt file
+sudo apt install python3-venv -y
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python kiln_controller.py
+deactivate
+
+To run the code
+python3 kiln-controller.py
+
+
+
