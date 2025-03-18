@@ -118,18 +118,54 @@
               .catch(error => console.error("Error:", error));
         }
 
-        function startKiln() {
-            fetch("/kiln/start", { method: "POST" })
-                .then(response => response.json())
-                .then(data => alert(data.message))
-                .catch(error => console.error("Error starting kiln:", error));
+        function savePreset() {
+            let presetName = prompt("Enter preset name:");
+            if (!presetName) return;
+            let schedule = [];
+            document.querySelectorAll("#scheduleTable tr").forEach((row, index) => {
+                if (index === 0) return;
+                let startTime = parseFloat(row.querySelector(".start_time").value) || 0;
+                let targetTemp = parseFloat(row.querySelector(".target_temp").value) || 0;
+                schedule.push({ "start_time": startTime, "target_temp": targetTemp });
+            });
+
+            fetch("/presets", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name: presetName, schedule: schedule })
+            }).then(response => response.json())
+              .then(data => alert(data.message))
+              .catch(error => console.error("Error saving preset:", error));
         }
 
-        function stopKiln() {
-            fetch("/kiln/stop", { method: "POST" })
+        function loadPreset() {
+            let presetName = prompt("Enter preset name to load:");
+            if (!presetName) return;
+
+            fetch(`/presets/${presetName}`)
                 .then(response => response.json())
-                .then(data => alert(data.message))
-                .catch(error => console.error("Error stopping kiln:", error));
+                .then(data => {
+                    if (data.error) {
+                        alert("Preset not found!");
+                        return;
+                    }
+                    document.getElementById("scheduleTable").innerHTML = `
+                        <tr>
+                            <th>Start Time (min)</th>
+                            <th>Target Temp (°F)</th>
+                            <th>Ramp Rate (°F/hr)</th>
+                            <th>Action</th>
+                        </tr>`;
+                    data.schedule.forEach(step => {
+                        addRow();
+                        let lastRow = document.querySelectorAll("#scheduleTable tr:last-child")[0];
+                        lastRow.querySelector(".start_time").value = step.start_time;
+                        lastRow.querySelector(".target_temp").value = step.target_temp;
+                    });
+                    calculateRampRates();
+                    updateGraph();
+                })
+                .catch(error => console.error("Error loading preset:", error));
         }
 
         function setupChart() {
@@ -166,22 +202,9 @@
     <button onclick="toggleRelay()">Toggle Relay</button>
 
     <h2>Firing Schedule</h2>
-    <table border="1" id="scheduleTable">
-        <tr>
-            <th>Start Time (min)</th>
-            <th>Target Temp (°F)</th>
-            <th>Ramp Rate (°F/hr)</th>
-            <th>Action</th>
-        </tr>
-    </table>
-    <button onclick="addRow()">➕ Add Row</button>
-    <button onclick="saveSchedule()">💾 Save Schedule</button>
-
-    <h2>Temperature Profile</h2>
-    <canvas id="tempChart" width="400" height="200"></canvas>
-
-    <h2>Controls</h2>
-    <button onclick="startKiln()">🔥 Start Kiln</button>
-    <button onclick="stopKiln()">❄️ Stop Kiln</button>
+    <button onclick="savePreset()">💾 Save Preset</button>
+    <button onclick="loadPreset()">📂 Load Preset</button>
+    <table id="scheduleTable"></table>
+    <canvas id="tempChart"></canvas>
 </body>
 </html>
