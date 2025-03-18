@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kiln Controller</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+        }
+        table {
+            width: 80%;
+            margin: 20px auto;
+            border-collapse: collapse;
+        }
+        th, td {
+            border: 1px solid black;
+            padding: 10px;
+        }
+        .status {
+            font-size: 20px;
+            margin: 10px;
+        }
+        .relay-on {
+            color: green;
+        }
+        .relay-off {
+            color: red;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Kiln Controller</h1>
+    
+    <!-- Temperature Display -->
+    <p class="status">Current Temperature: <span id="current-temp">--</span>°F</p>
+    <p class="status">Target Temperature: <span id="target-temp">--</span>°F</p>
+    <p class="status">Relay Status: <span id="relay-status" class="relay-off">OFF</span></p>
+
+    <!-- Start/Stop Buttons -->
+    <button onclick="startKiln()">Start Firing</button>
+    <button onclick="stopKiln()">Stop Firing</button>
+
+    <!-- Preset Dropdown -->
+    <h3>Load a Preset</h3>
+    <select id="preset-list">
+        <option value="">Select a Preset</option>
+    </select>
+    <button onclick="loadPreset()">Load Preset</button>
+
+    <!-- Schedule Table -->
+    <h3>Firing Schedule</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Step</th>
+                <th>Start Time (min)</th>
+                <th>Target Temp (°F)</th>
+                <th>Ramp Rate (°F/hr)</th>
+            </tr>
+        </thead>
+        <tbody id="schedule-table">
+        </tbody>
+    </table>
+    
+    <!-- Temperature Graph -->
+    <canvas id="tempChart" width="400" height="200"></canvas>
+
+    <script>
+        let schedule = [];
+        let chart;
+        
+        function fetchTemperature() {
+            fetch('/temperature')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('current-temp').textContent = data.temperature.toFixed(1);
+                    document.getElementById('relay-status').textContent = data.relay_status ? "ON" : "OFF";
+                    document.getElementById('relay-status').className = data.relay_status ? "relay-on" : "relay-off";
+                });
+        }
+
+        function fetchSchedule() {
+            fetch('/schedule')
+                .then(response => response.json())
+                .then(data => {
+                    schedule = data.schedule;
+                    updateScheduleTable();
+                    updateChart();
+                });
+        }
+
+        function updateScheduleTable() {
+            let tableBody = document.getElementById('schedule-table');
+            tableBody.innerHTML = "";
+            schedule.forEach((step, index) => {
+                let row = `<tr>
+                    <td>${index + 1}</td>
+                    <td>${step.start_time}</td>
+                    <td>${step.target_temp}</td>
+                    <td>${step.ramp_rate ? step.ramp_rate.toFixed(1) : '--'}</td>
+                </tr>`;
+                tableBody.innerHTML += row;
+            });
+        }
+
+        function updateChart() {
+            if (chart) chart.destroy();
+
+            let ctx = document.getElementById('tempChart').getContext('2d');
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: schedule.map(step => step.start_time),
+                    datasets: [{
+                        label: 'Target Temperature (°F)',
+                        data: schedule.map(step => step.target_temp),
+                        borderColor: 'red',
+                        fill: false
+                    }]
+                }
+            });
+        }
+
+        function startKiln() {
+            fetch('/kiln/start', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => alert(data.message));
+        }
+
+        function stopKiln() {
+            fetch('/kiln/stop', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => alert(data.message));
+        }
+
+        function loadPresets() {
+            fetch('/presets')
+                .then(response => response.json())
+                .then(data => {
+                    let presetList = document.getElementById('preset-list');
+                    presetList.innerHTML = '<option value="">Select a Preset</option>';
+                    Object.keys(data.presets).forEach(name => {
+                        presetList.innerHTML += `<option value="${name}">${name}</option>`;
+                    });
+                });
+        }
+
+        function loadPreset() {
+            let selectedPreset = document.getElementById('preset-list').value;
+            if (selectedPreset) {
+                fetch(`/presets/${selectedPreset}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        schedule = data.schedule;
+                        updateScheduleTable();
+                        updateChart();
+                    });
+            }
+        }
+
+        setInterval(fetchTemperature, 5000);
+        fetchSchedule();
+        loadPresets();
+    </script>
+
+</body>
+</html>
