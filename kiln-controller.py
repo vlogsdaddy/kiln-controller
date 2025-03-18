@@ -31,7 +31,7 @@ kiln_running = {'active': False}
 PRESETS_FILE = "firing_presets.json"
 
 # Slack webhook URL
-SLACK_HOOK_URL = "https://hooks.slack.com/services/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"
+SLACK_HOOK_URL = "webhook"
 
 # Initialize PID controller
 pid = simple_pid.PID(5.0, 0.1, 1.0, setpoint=0)  # Tune these values as needed
