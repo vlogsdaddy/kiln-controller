@@ -4,7 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kiln Controller</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
+        let tempChart;
+
         function fetchTemperature() {
             fetch('/temperature')
                 .then(response => response.json())
@@ -41,12 +44,15 @@
             targetTempCell.innerHTML = `<input type="number" class="target_temp" min="0" step="1" oninput="calculateRampRates()">`;
             rampRateCell.innerHTML = `<span class="ramp_rate">0</span> °F/hr`;
             deleteCell.innerHTML = `<button onclick="deleteRow(this)">❌</button>`;
+
+            updateGraph();
         }
 
         function deleteRow(btn) {
             let row = btn.parentNode.parentNode;
             row.parentNode.removeChild(row);
             calculateRampRates();
+            updateGraph();
         }
 
         function calculateRampRates() {
@@ -66,6 +72,28 @@
 
                 currentRow.querySelector(".ramp_rate").innerText = rampRate;
             }
+            updateGraph();
+        }
+
+        function updateGraph() {
+            let schedule = [];
+            let rows = document.querySelectorAll("#scheduleTable tr");
+
+            rows.forEach((row, index) => {
+                if (index === 0) return;
+                let startTime = parseFloat(row.querySelector(".start_time")?.value) || 0;
+                let targetTemp = parseFloat(row.querySelector(".target_temp")?.value) || 0;
+                schedule.push({ time: startTime, temp: targetTemp });
+            });
+
+            schedule.sort((a, b) => a.time - b.time);
+
+            let times = schedule.map(step => step.time);
+            let temps = schedule.map(step => step.temp);
+
+            tempChart.data.labels = times;
+            tempChart.data.datasets[0].data = temps;
+            tempChart.update();
         }
 
         function saveSchedule() {
@@ -90,60 +118,6 @@
               .catch(error => console.error("Error:", error));
         }
 
-        function loadPresets() {
-            fetch("/presets")
-                .then(response => response.json())
-                .then(data => {
-                    let presetDropdown = document.getElementById("presetDropdown");
-                    presetDropdown.innerHTML = '<option value="">--Select a Preset--</option>';
-                    Object.keys(data.presets).forEach(name => {
-                        let option = document.createElement("option");
-                        option.value = name;
-                        option.innerText = name;
-                        presetDropdown.appendChild(option);
-                    });
-                })
-                .catch(error => console.error("Error loading presets:", error));
-        }
-
-        function savePreset() {
-            let name = prompt("Enter preset name:");
-            if (!name) return;
-
-            fetch("/schedule")
-                .then(response => response.json())
-                .then(data => {
-                    fetch("/presets", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ name: name, schedule: data.schedule })
-                    })
-                    .then(response => response.json())
-                    .then(data => alert(data.message))
-                    .catch(error => console.error("Error saving preset:", error));
-                });
-        }
-
-        function loadPreset() {
-            let presetName = document.getElementById("presetDropdown").value;
-            if (!presetName) return;
-
-            fetch(`/presets/${presetName}`)
-                .then(response => response.json())
-                .then(data => {
-                    let table = document.getElementById("scheduleTable");
-                    table.innerHTML = `<tr><th>Start Time (min)</th><th>Target Temp (°F)</th><th>Ramp Rate (°F/hr)</th><th>Action</th></tr>`;
-                    data.schedule.forEach(step => {
-                        let row = table.insertRow();
-                        row.insertCell(0).innerHTML = `<input type="number" class="start_time" min="0" step="1" value="${step.start_time}" oninput="calculateRampRates()">`;
-                        row.insertCell(1).innerHTML = `<input type="number" class="target_temp" min="0" step="1" value="${step.target_temp}" oninput="calculateRampRates()">`;
-                        row.insertCell(2).innerHTML = `<span class="ramp_rate">${step.ramp_rate}</span> °F/hr`;
-                        row.insertCell(3).innerHTML = `<button onclick="deleteRow(this)">❌</button>`;
-                    });
-                })
-                .catch(error => console.error("Error loading preset:", error));
-        }
-
         function startKiln() {
             fetch("/kiln/start", { method: "POST" })
                 .then(response => response.json())
@@ -158,8 +132,31 @@
                 .catch(error => console.error("Error stopping kiln:", error));
         }
 
+        function setupChart() {
+            let ctx = document.getElementById("tempChart").getContext("2d");
+            tempChart = new Chart(ctx, {
+                type: "line",
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: "Temperature Profile (°F)",
+                        data: [],
+                        borderColor: "red",
+                        borderWidth: 2,
+                        fill: false
+                    }]
+                },
+                options: {
+                    scales: {
+                        x: { title: { display: true, text: "Time (minutes)" } },
+                        y: { title: { display: true, text: "Temperature (°F)" }, beginAtZero: false }
+                    }
+                }
+            });
+        }
+
         setInterval(fetchTemperature, 5000);
-        window.onload = loadPresets;
+        window.onload = setupChart;
     </script>
 </head>
 <body>
@@ -180,10 +177,8 @@
     <button onclick="addRow()">➕ Add Row</button>
     <button onclick="saveSchedule()">💾 Save Schedule</button>
 
-    <h2>Presets</h2>
-    <select id="presetDropdown"></select>
-    <button onclick="loadPreset()">📂 Load Preset</button>
-    <button onclick="savePreset()">💾 Save Preset</button>
+    <h2>Temperature Profile</h2>
+    <canvas id="tempChart" width="400" height="200"></canvas>
 
     <h2>Controls</h2>
     <button onclick="startKiln()">🔥 Start Kiln</button>
