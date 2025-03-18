@@ -21,7 +21,7 @@ sudo apt update
 sudo apt install git -y
 git clone https://github.com/Vlogsdaddy/kiln_controller.git
 cd kiln_controller
-python3 kiln_controller.py
+python3 kiln-controller.py
 pip3 install -r requirements.txt
 
 
