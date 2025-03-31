@@ -28,6 +28,28 @@ def save_presets(presets):
 
 presets = load_presets()
 
+@app.route('/get_presets', methods=['GET'])
+def get_presets():
+    return jsonify(presets)
+
+@app.route('/save_preset', methods=['POST'])
+def save_preset():
+    data = request.json
+    preset_name = data.get("name")
+    profile = data.get("profile")
+    if preset_name and profile:
+        presets[preset_name] = profile
+        save_presets(presets)
+        return jsonify({"message": "Preset saved successfully!"})
+    return jsonify({"message": "Invalid data"}), 400
+
+@app.route('/load_preset', methods=['GET'])
+def load_preset():
+    preset_name = request.args.get("name")
+    if preset_name in presets:
+        return jsonify(presets[preset_name])
+    return jsonify([])
+
 # Web Interface
 @app.route('/')
 def index():
@@ -154,6 +176,7 @@ def index():
     </body>
     </html>
     '''
+
 
 # Handle Kiln Control
 @app.route('/control', methods=['POST'])
