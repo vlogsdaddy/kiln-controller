@@ -57,6 +57,7 @@ def index():
     <html>
     <head>
         <title>Kiln Controller</title>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
         <script>
             function sendCommand(command) {
                 fetch('/control', {
@@ -78,6 +79,7 @@ def index():
                 timeCell.innerHTML = '<input type="number" onchange="updateRates()">';
                 tempCell.innerHTML = '<input type="number" onchange="updateRates()">';
                 rateCell.innerHTML = '<span>--</span>';
+                updateChart();
             }
 
             function updateRates() {
@@ -97,6 +99,25 @@ def index():
                         rateCell.innerText = '--';
                     }
                 }
+                updateChart();
+            }
+
+            function updateChart() {
+                let times = [];
+                let temps = [];
+                let table = document.getElementById("profileTable");
+                let rows = table.rows;
+                for (let i = 1; i < rows.length; i++) {
+                    let time = rows[i].cells[0].children[0].value;
+                    let temp = rows[i].cells[1].children[0].value;
+                    if (time !== "" && temp !== "") {
+                        times.push(parseFloat(time));
+                        temps.push(parseFloat(temp));
+                    }
+                }
+                chart.data.labels = times;
+                chart.data.datasets[0].data = temps;
+                chart.update();
             }
 
             function savePreset() {
@@ -153,6 +174,29 @@ def index():
                     updateRates();
                 });
             }
+
+            window.onload = function() {
+                let ctx = document.getElementById('tempChart').getContext('2d');
+                window.chart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: 'Temperature (°F)',
+                            data: [],
+                            borderColor: 'red',
+                            fill: false
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            x: { title: { display: true, text: 'Time (min)' } },
+                            y: { title: { display: true, text: 'Temperature (°F)' } }
+                        }
+                    }
+                });
+            }
         </script>
     </head>
     <body onload="loadPresets()">
@@ -160,6 +204,9 @@ def index():
         <p id="status">Status: OFF</p>
         <button onclick="sendCommand('start')">Start Kiln</button>
         <button onclick="sendCommand('stop')">Stop Kiln</button>
+
+        <h2>Temperature Profile</h2>
+        <canvas id="tempChart" width="400" height="200"></canvas>
         
         <h2>Heating Profile</h2>
         <table border="1" id="profileTable">
