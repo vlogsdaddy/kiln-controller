@@ -35,13 +35,13 @@ last_slack_time = 0
 slack_interval = 30  # seconds
 
 # GPIO setup
-SSR_PIN = 17
+SSR_PIN = 23
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(SSR_PIN, GPIO.OUT)
 
 # Thermocouple setup (using MAX31855 as example)
 spi = board.SPI()
-cs = digitalio.DigitalInOut(board.D5)
+cs = digitalio.DigitalInOut(board.D22)
 thermocouple = adafruit_max31855.MAX31855(spi, cs)
 
 # Load heating profile
