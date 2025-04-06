@@ -45,7 +45,7 @@ cs = digitalio.DigitalInOut(board.D5)
 thermocouple = adafruit_max31855.MAX31855(spi, cs)
 
 # Load heating profile
-with open('heating_profile.json') as f:
+with open('Test_firing.json') as f:
     profile = json.load(f)
 
 # Convert profile into lookup lists
