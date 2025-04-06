@@ -1,250 +1,115 @@
-from flask import Flask, render_template, request, jsonify
-import RPi.GPIO as GPIO
+import time
 import json
+import board
+import digitalio
+import adafruit_max31855
+import RPi.GPIO as GPIO
+import requests
+from simple_pid import PID
+from bisect import bisect_left
+from datetime import datetime
 
-app = Flask(__name__)
+# Convert C to F
+def c_to_f(c):
+    return (c * 9/5) + 32
 
-# Define GPIO pin for kiln control
-KILN_RELAY_PIN = 17  # Change this to the actual pin number
+# Webhook setup
+SLACK_WEBHOOK_URL = "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+
+def send_slack_notification(time_str, target_temp_f, measured_temp_f):
+    message = (
+        f"🔥 Kiln Status Update 🔥\n"
+        f"Time: {time_str}\n"
+        f"Target Temp: {target_temp_f:.1f}°F\n"
+        f"Measured Temp: {measured_temp_f:.1f}°F"
+    )
+    payload = {"text": message}
+    try:
+        response = requests.post(SLACK_WEBHOOK_URL, json=payload)
+        response.raise_for_status()
+    except requests.RequestException as e:
+        print(f"Slack notification failed: {e}")
+
+# Slack message setup
+last_slack_time = 0
+slack_interval = 30  # seconds
+
+# GPIO setup
+SSR_PIN = 17
 GPIO.setmode(GPIO.BCM)
-GPIO.setup(KILN_RELAY_PIN, GPIO.OUT)
+GPIO.setup(SSR_PIN, GPIO.OUT)
 
-kiln_status = "OFF"
-heating_profile = []
+# Thermocouple setup (using MAX31855 as example)
+spi = board.SPI()
+cs = digitalio.DigitalInOut(board.D5)
+thermocouple = adafruit_max31855.MAX31855(spi, cs)
 
-# Load and Save Presets
-PRESET_FILE = "presets.json"
+# Load heating profile
+with open('heating_profile.json') as f:
+    profile = json.load(f)
 
-def load_presets():
-    try:
-        with open(PRESET_FILE, "r") as file:
-            return json.load(file)
-    except FileNotFoundError:
-        return {}
+# Convert profile into lookup lists
+times = [p['time'] * 60 for p in profile]  # Convert minutes to seconds
+temps = [p['temperature'] for p in profile]
 
-def save_presets(presets):
-    with open(PRESET_FILE, "w") as file:
-        json.dump(presets, file)
+# PID controller setup
+pid = PID(5, 0.1, 1, setpoint=25)
+pid.output_limits = (0, 1)  # Output between 0 (off) and 1 (on)
 
-presets = load_presets()
+start_time = time.time()
 
-@app.route('/get_presets', methods=['GET'])
-def get_presets():
-    return jsonify(presets)
+log_file = open("kiln_log.txt", "a")  # Use "a" to append to the file
+log_file.write("Time,TargetTemp_F,MeasuredTemp_F\n")
 
-@app.route('/save_preset', methods=['POST'])
-def save_preset():
-    data = request.json
-    preset_name = data.get("name")
-    profile = data.get("profile")
-    if preset_name and profile:
-        presets[preset_name] = profile
-        save_presets(presets)
-        return jsonify({"message": "Preset saved successfully!"})
-    return jsonify({"message": "Invalid data"}), 400
-
-@app.route('/load_preset', methods=['GET'])
-def load_preset():
-    preset_name = request.args.get("name")
-    if preset_name in presets:
-        return jsonify(presets[preset_name])
-    return jsonify([])
-
-# Web Interface
-@app.route('/')
-def index():
-    return '''
-    <html>
-    <head>
-        <title>Kiln Controller</title>
-        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-        <script>
-            function sendCommand(command) {
-                fetch('/control', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({action: command})
-                })
-                .then(response => response.json())
-                .then(data => document.getElementById('status').innerText = 'Status: ' + data.status);
-            }
-
-            function addRow() {
-                let table = document.getElementById("profileTable");
-                let row = table.insertRow(-1);
-                let timeCell = row.insertCell(0);
-                let tempCell = row.insertCell(1);
-                let rateCell = row.insertCell(2);
-
-                timeCell.innerHTML = '<input type="number" onchange="updateRates()">';
-                tempCell.innerHTML = '<input type="number" onchange="updateRates()">';
-                rateCell.innerHTML = '<span>--</span>';
-                updateChart();
-            }
-
-            function updateRates() {
-                let table = document.getElementById("profileTable");
-                let rows = table.rows;
-                for (let i = 1; i < rows.length; i++) {
-                    let prevTime = i > 1 ? rows[i - 1].cells[0].children[0].value : 0;
-                    let prevTemp = i > 1 ? rows[i - 1].cells[1].children[0].value : 0;
-                    let currTime = rows[i].cells[0].children[0].value;
-                    let currTemp = rows[i].cells[1].children[0].value;
-                    let rateCell = rows[i].cells[2].children[0];
-
-                    if (prevTime !== "" && prevTemp !== "" && currTime !== "" && currTemp !== "" && currTime != prevTime) {
-                        let rate = (currTemp - prevTemp) / (currTime - prevTime);
-                        rateCell.innerText = rate.toFixed(2) + ' °F/min';
-                    } else {
-                        rateCell.innerText = '--';
-                    }
-                }
-                updateChart();
-            }
-
-            function updateChart() {
-                let times = [];
-                let temps = [];
-                let table = document.getElementById("profileTable");
-                let rows = table.rows;
-                for (let i = 1; i < rows.length; i++) {
-                    let time = rows[i].cells[0].children[0].value;
-                    let temp = rows[i].cells[1].children[0].value;
-                    if (time !== "" && temp !== "") {
-                        times.push(parseFloat(time));
-                        temps.push(parseFloat(temp));
-                    }
-                }
-                chart.data.labels = times;
-                chart.data.datasets[0].data = temps;
-                chart.update();
-            }
-
-            function savePreset() {
-                let table = document.getElementById("profileTable");
-                let rows = table.rows;
-                let profile = [];
-                for (let i = 1; i < rows.length; i++) {
-                    let time = rows[i].cells[0].children[0].value;
-                    let temp = rows[i].cells[1].children[0].value;
-                    if (time !== "" && temp !== "") {
-                        profile.push({start_time: parseFloat(time), target_temp: parseFloat(temp)});
-                    }
-                }
-                let presetName = prompt("Enter preset name:");
-                if (presetName) {
-                    fetch('/save_preset', {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({name: presetName, profile: profile})
-                    })
-                    .then(response => response.json())
-                    .then(data => alert(data.message));
-                }
-            }
-
-            function loadPresets() {
-                fetch('/get_presets')
-                .then(response => response.json())
-                .then(data => {
-                    let select = document.getElementById("presetSelect");
-                    select.innerHTML = "";
-                    for (let name in data) {
-                        let option = document.createElement("option");
-                        option.value = name;
-                        option.text = name;
-                        select.appendChild(option);
-                    }
-                });
-            }
-
-            function loadPreset() {
-                let presetName = document.getElementById("presetSelect").value;
-                fetch(`/load_preset?name=${presetName}`)
-                .then(response => response.json())
-                .then(data => {
-                    let table = document.getElementById("profileTable");
-                    table.innerHTML = '<tr><th>Start Time (min)</th><th>Target Temp (°F)</th><th>Ramp Rate (°F/min)</th></tr>';
-                    data.forEach(entry => {
-                        let row = table.insertRow(-1);
-                        row.insertCell(0).innerHTML = `<input type="number" value="${entry.start_time}" onchange="updateRates()">`;
-                        row.insertCell(1).innerHTML = `<input type="number" value="${entry.target_temp}" onchange="updateRates()">`;
-                        row.insertCell(2).innerHTML = '<span>--</span>';
-                    });
-                    updateRates();
-                });
-            }
-
-            window.onload = function() {
-                let ctx = document.getElementById('tempChart').getContext('2d');
-                window.chart = new Chart(ctx, {
-                    type: 'line',
-                    data: {
-                        labels: [],
-                        datasets: [{
-                            label: 'Temperature (°F)',
-                            data: [],
-                            borderColor: 'red',
-                            fill: false
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        scales: {
-                            x: { title: { display: true, text: 'Time (min)' } },
-                            y: { title: { display: true, text: 'Temperature (°F)' } }
-                        }
-                    }
-                });
-            }
-        </script>
-    </head>
-    <body onload="loadPresets()">
-        <h1>Kiln Controller</h1>
-        <p id="status">Status: OFF</p>
-        <button onclick="sendCommand('start')">Start Kiln</button>
-        <button onclick="sendCommand('stop')">Stop Kiln</button>
-
-        <h2>Temperature Profile</h2>
-        <canvas id="tempChart" width="400" height="200"></canvas>
+try:
+    while True:
+        elapsed = time.time() - start_time
         
-        <h2>Heating Profile</h2>
-        <table border="1" id="profileTable">
-            <tr>
-                <th>Start Time (min)</th>
-                <th>Target Temp (°F)</th>
-                <th>Ramp Rate (°F/min)</th>
-            </tr>
-        </table>
-        <button onclick="addRow()">Add Row</button>
-        <button onclick="savePreset()">Save Preset</button>
-        <select id="presetSelect"></select>
-        <button onclick="loadPreset()">Load Preset</button>
-    </body>
-    </html>
-    '''
+        # Determine target temp based on time
+        i = bisect_left(times, elapsed)
+        if i == 0:
+            target_temp = temps[0]
+        elif i >= len(times):
+            target_temp = temps[-1]
+        else:
+            # Interpolate
+            t1, t2 = times[i-1], times[i]
+            temp1, temp2 = temps[i-1], temps[i]
+            frac = (elapsed - t1) / (t2 - t1)
+            target_temp = temp1 + frac * (temp2 - temp1)
 
+        pid.setpoint = target_temp
 
-# Handle Kiln Control
-@app.route('/control', methods=['POST'])
-def control():
-    global kiln_status
-    data = request.get_json()
-    action = data.get('action')
-    
-    if action == 'start':
-        GPIO.output(KILN_RELAY_PIN, GPIO.HIGH)
-        kiln_status = "ON"
-    elif action == 'stop':
-        GPIO.output(KILN_RELAY_PIN, GPIO.LOW)
-        kiln_status = "OFF"
-    else:
-        return jsonify({'message': 'Invalid command'}), 400
-    
-    return jsonify({'message': f'Kiln {action}ed', 'status': kiln_status})
+        # Read current temperature
+        current_temp = thermocouple.temperature
 
-if __name__ == '__main__':
-    try:
-        app.run(host='0.0.0.0', port=5000, debug=True)
-    except KeyboardInterrupt:
-        GPIO.cleanup()
+        # Compute PID output
+        output = pid(current_temp)
+
+        # SSR control
+        if output > 0.5:
+            GPIO.output(SSR_PIN, GPIO.HIGH)
+        else:
+            GPIO.output(SSR_PIN, GPIO.LOW)
+
+        # Send Slack notification
+        if elapsed - last_slack_time > slack_interval:
+            send_slack_notification(current_time_str, target_temp_f, measured_temp_f)
+            last_slack_time = elapsed
+        
+        current_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        measured_temp_f = c_to_f(current_temp)
+        target_temp_f = c_to_f(target_temp)
+
+        log_line = f"{current_time_str},{target_temp_f:.1f},{measured_temp_f:.1f}\n"
+        log_file.write(log_line)
+        log_file.flush()  # Ensure it's written to disk
+
+        print(f"[{current_time_str}] Target: {target_temp_f:.1f}°F | Current: {measured_temp_f:.1f}°F | Output: {output:.2f}")
+
+        time.sleep(1)
+
+except KeyboardInterrupt:
+    log_file.close()
+    GPIO.cleanup()
+
