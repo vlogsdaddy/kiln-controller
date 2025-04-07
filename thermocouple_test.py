@@ -1,3 +1,9 @@
+# Max Vin to Rasp pin2
+# Max GND to Rasp pin6
+# Max DO to Rasp pin21
+# Max CS to Rasp pin15
+# Max CLK to Rasp pin23
+
 import time
 import board
 import digitalio
