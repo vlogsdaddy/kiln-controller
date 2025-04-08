@@ -1,0 +1,12 @@
+[
+  {"time": 0, "temperature": 18},
+  {"time": 86, "temperature": 104},
+  {"time": 146, "temperature": 104},
+  {"time": 462, "temperature": 1128},
+  {"time": 472, "temperature": 1128},
+  {"time": 528, "temperature": 1184},
+  {"time": 538, "temperature": 1184},
+  {"time": 544, "temperature": 1128},
+  {"time": 574, "temperature": 1128},
+  {"time": 839, "temperature": 760}
+]
