@@ -80,8 +80,30 @@ try:
 
         pid.setpoint = target_temp
 
-        # Read current temperature
-        current_temp = thermocouple.temperature
+        # Try reading temperature, with retry on failure
+        while True:
+            try:
+                current_temp = thermocouple.temperature
+                if current_temp is None:
+                    raise RuntimeError("Invalid temperature reading (None)")
+                break  # valid reading, break retry loop
+            except RuntimeError as e:
+                error_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                print(f"[{error_time_str}] Thermocouple error: {e}. Pausing and retrying in 1s...")
+                GPIO.output(SSR_PIN, GPIO.LOW)  # Turn off heater during fault
+
+                # Send error alert to Slack
+            try:
+                error_message = {
+                    "text": f"⚠️ *Kiln Alert*: Error reading temperature at {error_time_str}.\n"
+                            f"> {str(e)}\nRetrying in 1 second..."
+                }
+                response = requests.post(SLACK_WEBHOOK_URL, json=error_message)
+                response.raise_for_status()
+            except requests.RequestException as slack_error:
+                print(f"Slack error alert failed: {slack_error}")
+
+        time.sleep(1)
 
         # Compute PID output
         output = pid(current_temp)
@@ -92,18 +114,20 @@ try:
         else:
             GPIO.output(SSR_PIN, GPIO.LOW)
 
-        # Send Slack notification
-        if elapsed - last_slack_time > slack_interval:
-            send_slack_notification(current_time_str, target_temp_f, measured_temp_f)
-            last_slack_time = elapsed
-        
+        # Prepare logging values
         current_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         measured_temp_f = c_to_f(current_temp)
         target_temp_f = c_to_f(target_temp)
 
+        # Send Slack notification
+        if elapsed - last_slack_time > slack_interval:
+            send_slack_notification(current_time_str, target_temp_f, measured_temp_f)
+            last_slack_time = elapsed
+
+        # Log and print
         log_line = f"{current_time_str},{target_temp_f:.1f},{measured_temp_f:.1f}\n"
         log_file.write(log_line)
-        log_file.flush()  # Ensure it's written to disk
+        log_file.flush()
 
         print(f"[{current_time_str}] Target: {target_temp_f:.1f}°F | Current: {measured_temp_f:.1f}°F | Output: {output:.2f}")
 
@@ -112,4 +136,5 @@ try:
 except KeyboardInterrupt:
     log_file.close()
     GPIO.cleanup()
+
 
