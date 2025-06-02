@@ -9,11 +9,11 @@ from simple_pid import PID
 from bisect import bisect_left
 from datetime import datetime
 
-# Convert C to F
+# Convert Celsius to Fahrenheit
 def c_to_f(c):
     return (c * 9/5) + 32
 
-# Webhook setup
+# Slack webhook setup
 SLACK_WEBHOOK_URL = "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
 
 def send_slack_notification(time_str, target_temp_f, measured_temp_f):
@@ -30,7 +30,7 @@ def send_slack_notification(time_str, target_temp_f, measured_temp_f):
     except requests.RequestException as e:
         print(f"Slack notification failed: {e}")
 
-# Slack message setup
+# Slack status variables
 last_slack_time = 0
 slack_interval = 30  # seconds
 
@@ -39,7 +39,7 @@ SSR_PIN = 23
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(SSR_PIN, GPIO.OUT)
 
-# Thermocouple setup (using MAX31855 as example)
+# Thermocouple setup (using MAX31855)
 spi = board.SPI()
 cs = digitalio.DigitalInOut(board.D22)
 thermocouple = adafruit_max31855.MAX31855(spi, cs)
@@ -48,31 +48,35 @@ thermocouple = adafruit_max31855.MAX31855(spi, cs)
 with open('Test_firing.json') as f:
     profile = json.load(f)
 
-# Convert profile into lookup lists
-times = [p['time'] * 60 for p in profile]  # Convert minutes to seconds
+# Convert profile to lookup lists
+times = [p['time'] * 60 for p in profile]  # minutes → seconds
 temps = [p['temperature'] for p in profile]
 
 # PID controller setup
 pid = PID(5, 0.1, 1, setpoint=25)
-pid.output_limits = (0, 1)  # Output between 0 (off) and 1 (on)
+pid.output_limits = (0, 1)  # 0 = off, 1 = full on
 
 start_time = time.time()
 
-log_file = open("kiln_log.txt", "a")  # Use "a" to append to the file
+log_file = open("kiln_log.txt", "a")
 log_file.write("Time,TargetTemp_F,MeasuredTemp_F\n")
+
+# Thermocouple error tracking
+last_error_alert_time = 0
+thermo_error_active = False
+error_alert_interval = 10  # seconds
 
 try:
     while True:
         elapsed = time.time() - start_time
-        
-        # Determine target temp based on time
+
+        # Determine target temperature by interpolation
         i = bisect_left(times, elapsed)
         if i == 0:
             target_temp = temps[0]
         elif i >= len(times):
             target_temp = temps[-1]
         else:
-            # Interpolate
             t1, t2 = times[i-1], times[i]
             temp1, temp2 = temps[i-1], temps[i]
             frac = (elapsed - t1) / (t2 - t1)
@@ -80,61 +84,89 @@ try:
 
         pid.setpoint = target_temp
 
-        # Try reading temperature, with retry on failure
+        # Try reading temperature with retry on failure
         while True:
             try:
                 current_temp = thermocouple.temperature
                 if current_temp is None:
                     raise RuntimeError("Invalid temperature reading (None)")
-                break  # valid reading, break retry loop
+
+                # Thermocouple recovered
+                if thermo_error_active:
+                    recovery_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    print(f"[{recovery_time_str}] Thermocouple recovered.")
+                    try:
+                        recovery_msg = {
+                            "text": f"✅ *Kiln Notice*: Thermocouple recovered at {recovery_time_str}."
+                        }
+                        requests.post(SLACK_WEBHOOK_URL, json=recovery_msg)
+                    except requests.RequestException as slack_error:
+                        print(f"Slack recovery alert failed: {slack_error}")
+
+                thermo_error_active = False
+                break  # exit retry loop
+
             except RuntimeError as e:
+                error_time = time.time()
                 error_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                print(f"[{error_time_str}] Thermocouple error: {e}. Pausing and retrying in 1s...")
-                GPIO.output(SSR_PIN, GPIO.LOW)  # Turn off heater during fault
+                print(f"[{error_time_str}] Thermocouple error: {e}. Pausing and retrying...")
 
-                # Send error alert to Slack
-            try:
-                error_message = {
-                    "text": f"⚠️ *Kiln Alert*: Error reading temperature at {error_time_str}.\n"
-                            f"> {str(e)}\nRetrying in 1 second..."
-                }
-                response = requests.post(SLACK_WEBHOOK_URL, json=error_message)
-                response.raise_for_status()
-            except requests.RequestException as slack_error:
-                print(f"Slack error alert failed: {slack_error}")
+                GPIO.output(SSR_PIN, GPIO.LOW)  # Turn off heater
 
-        time.sleep(1)
+                if not thermo_error_active:
+                    thermo_error_active = True
+                    last_error_alert_time = error_time
+                    try:
+                        error_msg = {
+                            "text": f"⚠️ *Kiln Alert*: Thermocouple error at {error_time_str}.\n"
+                                    f"> {str(e)}\nAttempting to reconnect..."
+                        }
+                        requests.post(SLACK_WEBHOOK_URL, json=error_msg)
+                    except requests.RequestException as slack_error:
+                        print(f"Slack alert failed: {slack_error}")
+                elif error_time - last_error_alert_time >= error_alert_interval:
+                    last_error_alert_time = error_time
+                    try:
+                        update_msg = {
+                            "text": f"🔄 *Kiln Status*: Still retrying thermocouple connection...\n"
+                                    f"Last error: {str(e)}\nTime: {error_time_str}"
+                        }
+                        requests.post(SLACK_WEBHOOK_URL, json=update_msg)
+                    except requests.RequestException as slack_error:
+                        print(f"Slack update alert failed: {slack_error}")
+
+                time.sleep(1)
 
         # Compute PID output
         output = pid(current_temp)
 
-        # SSR control
+        # Control SSR
         if output > 0.5:
             GPIO.output(SSR_PIN, GPIO.HIGH)
         else:
             GPIO.output(SSR_PIN, GPIO.LOW)
 
-        # Prepare logging values
         current_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         measured_temp_f = c_to_f(current_temp)
         target_temp_f = c_to_f(target_temp)
 
-        # Send Slack notification
+        # Slack status update
         if elapsed - last_slack_time > slack_interval:
             send_slack_notification(current_time_str, target_temp_f, measured_temp_f)
             last_slack_time = elapsed
 
-        # Log and print
+        # Log to file
         log_line = f"{current_time_str},{target_temp_f:.1f},{measured_temp_f:.1f}\n"
         log_file.write(log_line)
         log_file.flush()
 
-        print(f"[{current_time_str}] Target: {target_temp_f:.1f}°F | Current: {measured_temp_f:.1f}°F | Output: {output:.2f}")
+        # Console output
+        print(f"[{current_time_str}] Target: {target_temp_f:.1f}°F | "
+              f"Current: {measured_temp_f:.1f}°F | Output: {output:.2f}")
 
         time.sleep(1)
 
 except KeyboardInterrupt:
+    print("Shutting down kiln controller.")
     log_file.close()
     GPIO.cleanup()
-
-
