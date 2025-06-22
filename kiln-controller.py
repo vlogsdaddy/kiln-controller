@@ -84,6 +84,8 @@ try:
 
         pid.setpoint = target_temp
 
+        last_valid_temp = 25.0  # fallback default in °C
+        
         # Try reading temperature with retry on failure
         while True:
             try:
@@ -104,13 +106,20 @@ try:
                         print(f"Slack recovery alert failed: {slack_error}")
 
                 thermo_error_active = False
+                last_valid_temp = current_temp  # Save good reading
                 break  # exit retry loop
 
             except RuntimeError as e:
                 error_time = time.time()
                 error_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                print(f"[{error_time_str}] Thermocouple error: {e}. Pausing and retrying...")
 
+                # 🔥 If we're above 700 °C (1292 °F), ignore and use last valid temp
+                if target_temp >= 700:
+                    print(f"[{error_time_str}] Ignoring thermocouple error above 700°C: {e}")
+                    current_temp = last_valid_temp
+                    break
+
+                print(f"[{error_time_str}] Thermocouple error: {e}. Pausing and retrying...")
                 GPIO.output(SSR_PIN, GPIO.LOW)  # Turn off heater
 
                 if not thermo_error_active:
