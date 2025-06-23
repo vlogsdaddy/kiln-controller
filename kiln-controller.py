@@ -66,6 +66,8 @@ last_error_alert_time = 0
 thermo_error_active = False
 error_alert_interval = 10  # seconds
 
+last_valid_temp = 25.0  # fallback default in °C
+
 try:
     while True:
         elapsed = time.time() - start_time
@@ -83,9 +85,7 @@ try:
             target_temp = temp1 + frac * (temp2 - temp1)
 
         pid.setpoint = target_temp
-
-        last_valid_temp = 25.0  # fallback default in °C
-        
+    
         # Try reading temperature with retry on failure
         while True:
             try:
