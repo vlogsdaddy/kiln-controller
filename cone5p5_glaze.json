@@ -1,11 +1,12 @@
 [
-  {"time": 0, "temperature": 29},
-  {"time": 41, "temperature": 104},
-  {"time": 101, "temperature": 104},
-  {"time": 462, "temperature": 871},
-  {"time": 472, "temperature": 982},
-  {"time": 528, "temperature": 1093},
-  {"time": 538, "temperature": 1152},
-  {"time": 544, "temperature": 1167},
-  {"time": 574, "temperature": 1167}
+  {"time": 0, "temperature": 85},
+  {"time": 40, "temperature": 250},
+  {"time": 100, "temperature": 250},
+  {"time": 200, "temperature": 500},
+  {"time": 332, "temperature": 1600},
+  {"time": 362, "temperature": 1800},
+  {"time": 422, "temperature": 2000},
+  {"time": 485, "temperature": 2106},
+  {"time": 545, "temperature": 2133},
+  {"time": 555, "temperature": 2133}
 ]
