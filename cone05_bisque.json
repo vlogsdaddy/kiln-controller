@@ -1,8 +1,9 @@
 [
-  {"time": 0, "temperature": 18},
-  {"time": 36, "temperature": 121},
-  {"time": 96, "temperature": 121},
-  {"time": 326, "temperature": 971},
-  {"time": 386, "temperature": 1031},
-  {"time": 401, "temperature": 1031}
+  {"time": 0, "temperature": 29},
+  {"time": 40, "temperature": 121},
+  {"time": 100, "temperature": 121},
+  {"time": 262, "temperature": 871},
+  {"time": 289, "temperature": 971},
+  {"time": 349, "temperature": 1031},
+  {"time": 364, "temperature": 1031}
 ]
