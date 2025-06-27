@@ -13,6 +13,10 @@ from datetime import datetime
 def c_to_f(c):
     return (c * 9/5) + 32
 
+# Convert Fahrenheit to Celsius
+def f_to_c(f):
+    return (f - 32) * 5/9
+
 # Slack webhook setup
 SLACK_WEBHOOK_URL = "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
 
@@ -44,13 +48,13 @@ spi = board.SPI()
 cs = digitalio.DigitalInOut(board.D22)
 thermocouple = adafruit_max31855.MAX31855(spi, cs)
 
-# Load heating profile
-with open('Test_cone6_glaze.json') as f:
+# Load heating profile (times in minutes, temperatures in °F)
+with open('cone5p5_glaze.json') as f:
     profile = json.load(f)
 
-# Convert profile to lookup lists
+# Convert times to seconds, temperatures to °C
 times = [p['time'] * 60 for p in profile]  # minutes → seconds
-temps = [p['temperature'] for p in profile]
+temps = [f_to_c(p['temperature']) for p in profile]  # °F → °C
 
 # PID controller setup
 pid = PID(5, 0.1, 1, setpoint=25)
