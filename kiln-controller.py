@@ -40,8 +40,10 @@ slack_interval = 30  # seconds
 
 # GPIO setup
 SSR_PIN = 23
+FAN_PIN = 21  # GPIO pin to control fan
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(SSR_PIN, GPIO.OUT)
+GPIO.setup(FAN_PIN, GPIO.OUT)
 
 # Thermocouple setup (using MAX31855)
 spi = board.SPI()
@@ -69,8 +71,11 @@ log_file.write("Time,TargetTemp_F,MeasuredTemp_F\n")
 last_error_alert_time = 0
 thermo_error_active = False
 error_alert_interval = 10  # seconds
-
 last_valid_temp = 25.0  # fallback default in °C
+
+# Turn on the fan at program start
+GPIO.output(FAN_PIN, GPIO.HIGH)
+print("Fan turned ON.")
 
 try:
     while True:
@@ -181,5 +186,6 @@ try:
 
 except KeyboardInterrupt:
     print("Shutting down kiln controller.")
-    log_file.close()
+    GPIO.output(FAN_PIN, GPIO.LOW)  # Turn off the fan
     GPIO.cleanup()
+    log_file.close()
